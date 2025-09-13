@@ -24,7 +24,7 @@ from quickmachotkey.constants import kVK_ANSI_A, kVK_Space, cmdKey, controlKey, 
 
 # LLM configuration constants for different speed levels
 SLOW_CONFIG = llmConfig(provider="OpenAI", model="gpt-5", reasoning_effort="medium", priority="auto")
-NORMAL_CONFIG = llmConfig(provider="OpenAI", model="gpt-5", reasoning_effort="low", priority="auto")
+NORMAL_CONFIG = llmConfig(provider="OpenAI", model="gpt-5-chat-latest", reasoning_effort=None, priority="auto")
 FAST_CONFIG = llmConfig(provider="OpenAI", model="gpt-5-nano", reasoning_effort="minimal", priority="auto")
 
 macLLM = None
@@ -248,7 +248,6 @@ def main():
     ShortCut.init_shortcuts(macLLM)
     
     macLLM.show_instructions()
-    print("macLLM.ui.start")
     macLLM.ui.start(dont_run_app=False)
 
 if __name__ == "__main__":
