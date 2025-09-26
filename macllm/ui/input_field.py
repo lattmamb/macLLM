@@ -267,6 +267,13 @@ class InputFieldDelegate(NSObject):
         cursor = self.text_view.selectedRange().location  # type: ignore[attr-defined]
         full_text: str = self.text_view.string()
 
+        # Guard against transient states where the caret can momentarily be
+        # beyond the end of the string (or negative). Clamp to valid range.
+        if cursor > len(full_text):
+            cursor = len(full_text)
+        elif cursor < 0:
+            cursor = 0
+
         # Walk left until we hit whitespace *outside* quotes.
         start = cursor
         in_quotes = False
