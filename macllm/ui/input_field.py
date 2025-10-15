@@ -23,6 +23,7 @@ from Cocoa import (
     NSAttachmentAttributeName,
 )
 from macllm.ui.autocomplete import AutocompleteController
+from macllm.core.shortcuts import ShortCut
 import objc
 
 # ---------------------------------------------------------------------------
@@ -169,7 +170,7 @@ class InputFieldDelegate(NSObject):
                         # Unpack tuple or use string directly
                         raw_tag = selection[0] if isinstance(selection, tuple) else selection
                         # Strip trailing quote so the tag stays *open* while editing
-                        if raw_tag.endswith('"') and raw_tag.startswith('@"'):
+                        if raw_tag.endswith('"') and (raw_tag.startswith('@"') or raw_tag.startswith('/"')):
                             raw_edit = raw_tag[:-1]  # drop closing quote
                         else:
                             raw_edit = raw_tag
@@ -456,7 +457,9 @@ class InputFieldHandler:
         # Create autocomplete controller with the full plugin list so that
         # dynamic suggestions (e.g. from the new file-plugin) are supported.
         plugin_list = macllm_ui.macllm.plugins if hasattr(macllm_ui.macllm, "plugins") else []
-        delegate.autocomplete = AutocompleteController(plugin_list, input_field)
+        # Provide configured shortcuts to autocomplete (list of triggers like '/blog').
+        shortcuts_list = [s.trigger for s in ShortCut.shortcuts]
+        delegate.autocomplete = AutocompleteController(plugin_list, input_field, shortcuts=shortcuts_list)
 
         return (input_container, input_field, delegate)
 

@@ -56,30 +56,39 @@ class ShortCut:
                         print(f"Invalid shortcut types in {file_path}: {shortcut}")
                     continue
                     
-                if not trigger.startswith('@'):
-                    if debug:
-                        print(f"Trigger must start with @ in {file_path}: {trigger}")
+                # Normal shortcuts now use "/" prefix. Entries starting with
+                # "@" are reserved for plugin configuration tags (e.g. @IndexFiles).
+                if trigger.startswith('/'):
+                    ShortCut(trigger, prompt)
+                    shortcuts_count += 1
                     continue
 
-                # Check if any plugin wants to handle this as a *config tag*
-                handled_as_config = False
-                if cls.macllm and hasattr(cls.macllm, 'plugins'):
-                    for plugin in cls.macllm.plugins:
-                        try:
-                            if any(trigger.startswith(pfx) for pfx in plugin.get_config_prefixes()):
-                                plugin.on_config_tag(trigger, prompt)
-                                handled_as_config = True
-                                break
-                        except Exception as exc:  # pragma: no cover
-                            if debug:
-                                cls.macllm.debug_exception(exc)
+                if trigger.startswith('@'):
+                    # Check if any plugin wants to handle this as a *config tag*
+                    handled_as_config = False
+                    if cls.macllm and hasattr(cls.macllm, 'plugins'):
+                        for plugin in cls.macllm.plugins:
+                            try:
+                                if any(trigger.startswith(pfx) for pfx in plugin.get_config_prefixes()):
+                                    plugin.on_config_tag(trigger, prompt)
+                                    handled_as_config = True
+                                    break
+                            except Exception as exc:  # pragma: no cover
+                                if debug:
+                                    cls.macllm.debug_exception(exc)
 
-                if handled_as_config:
-                    continue  # Don't add as normal shortcut
+                    if handled_as_config:
+                        # Handled as config – do not add as normal shortcut
+                        continue
 
-                # Normal shortcut entry
-                ShortCut(trigger, prompt)
-                shortcuts_count += 1
+                    # Unknown @-prefixed entry – skip (shortcuts must use "/").
+                    if debug:
+                        print(f"Ignoring non-config shortcut '@' in {file_path}: {trigger} (use '/' instead)")
+                    continue
+
+                # Any other prefix is invalid – skip with a debug note when enabled
+                if debug:
+                    print(f"Ignoring invalid shortcut trigger in {file_path}: {trigger} (must start with '/')")
             
             if debug:
                 cls.macllm.debug_log(f"Found {shortcuts_count} shortcuts.",0)

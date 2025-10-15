@@ -168,7 +168,7 @@ class AutocompleteController:  # pylint: disable=too-few-public-methods
     Besides static prefixes this controller now supports *dynamic* suggestions
     supplied by plugins that implement the optional autocomplete hooks."""
 
-    def __init__(self, plugins: List[object], anchor_view):
+    def __init__(self, plugins: List[object], anchor_view, shortcuts: List[str] | None = None):
         # Store plugin refs
         self._plugins = plugins
 
@@ -188,6 +188,9 @@ class AutocompleteController:  # pylint: disable=too-few-public-methods
         self._static_tags = sorted(all_tags)
         self._prefix_map = prefix_to_plugin
 
+        # Configured user shortcuts (e.g. ["/blog", "/fixnote"]).
+        self._shortcuts: List[str] = sorted(shortcuts or [])
+
         # Populated each time *update_suggestions* is called:
         # list[tuple[str raw, str display]]
         self._entries: list[tuple[str, str]] = []
@@ -202,12 +205,28 @@ class AutocompleteController:  # pylint: disable=too-few-public-methods
         """Refresh suggestions based on current *fragment*.  This now queries
         plugins that support dynamic autocomplete in addition to simple prefix
         filtering."""
-        if not fragment.startswith("@"):
+        if not (fragment.startswith("@") or fragment.startswith("/")):
             self._popup.hide()
             return
 
         entries: list[tuple[str, str]] = []  # raw, display
         seen: set[str] = set()
+
+        # 0. If fragment starts with '/' we are completing user-defined shortcuts.
+        if fragment.startswith('/'):
+            lower = fragment.lower()
+            for s in self._shortcuts:
+                if s.lower().startswith(lower) and len(s) > 3:
+                    entries.append((s, s))
+                    seen.add(s)
+            # Limit and show
+            entries = entries[:10]
+            self._entries = entries
+            display_list = [disp for _raw, disp in entries]
+            self._selected = 0
+            self._popup.show(display_list)
+            self._popup.update_selection(self._selected)
+            return
 
         # 1. Always add matching *static* tag prefixes first so that built-in
         #    tags and user-defined shortcuts take precedence over file-based

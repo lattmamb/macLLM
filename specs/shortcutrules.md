@@ -1,47 +1,66 @@
 # Shortcut Parsing Rules
 
-macLLM can use shortcuts. They start with the `@` symbol. The rules are as follows:
+macLLM supports two user-facing constructs:
 
-1. A shortcut is parsed until the first whitespace character is encountered
-2. If a shortcut contains a space with a backslash in front of it, it is included as a shortcut as a space
-   - Example: `@~/My\ Home/foo` → `"@~/My Home/foo"`
-   - Example: `@~/My Home/foo` → `"@~/My"`
-3. If a shortcut starts with an `@"` it includes all text until either a closing `"` or a newline is encountered (quotes are stripped)
-   - Example: `@"~/My Home/foo"` → `"@~/My Home/foo"`
+- Shortcuts: simple text expansions that start with the `/` symbol.
+- Tags: plugin-driven `@...` expressions that can add context (files, clipboard, images, URLs, etc.).
 
-## Types of Shortcuts
+Processing order: shortcuts expand first, then tags are processed by plugins.
 
-### User Defined Shortcuts
+## Shortcut Syntax (`/`)
 
-Functionality for them is in the file `shortcuts.py`.
-
-- They are read from two locations:
+- Shortcuts are declared in TOML as two-element arrays: `["/trigger", "expansion text"]`.
+- They are read from:
   1. The application-supplied TOML file `config/default_shortcuts.toml`
-  2. **And** any `*.toml` file found in the user directory `~/.config/macllm/`
+  2. Any `*.toml` file found in the user directory `~/.config/macllm/`
+- At runtime, occurrences of the exact `/trigger` are replaced with the configured expansion before tag processing.
+- Example:
+  - In TOML: `["/blog", "Expand the following into paragraphs...\n---\n"]`
+  - In input: `Please /blog this:` → the `/blog` token is replaced with the configured text.
 
-Each TOML file must contain a `shortcuts` table whose items are two-element arrays `[trigger, expansion]`.
+Configuration tags in TOML:
 
-- They are simple text-expansion *trigger → text* mappings.
-- For example `@fix` is expanded to "Correct any spelling or grammar mistakes in the following text:"
+- Any entry whose trigger starts with `@` is treated as a configuration tag for plugins (not a user shortcut).
+- Example: `[@IndexFiles, "/some/path"]` is consumed by the file plugin to build an index for path tags.
 
-### Shortcut Plugins
+## Tag Syntax (`@`)
 
-These are more complex as they not only expand text but also add context to a Conversation.
+Tags are parsed in the user’s input after shortcuts expand. The parsing rules are:
 
-- Context plugins are in the shortcuts subdirectory
-- Their name must end in `_plugin` in order to be loaded
-- They inherit from the base class `ShortcutPlugin` (`macllm.shortcuts.base.ShortcutPlugin`)
-- Every plugin must implement at least the following methods:
+1. A tag runs until the first whitespace character: `@clipboard some text` → tag is `@clipboard`.
+2. Backslash-escaped spaces are included: `@/path/with\ spaces/file.txt` → tag is `@/path/with spaces/file.txt`.
+3. Quoted tags include everything until the closing quote or newline (quotes are stripped):
+   - `@"~/My Home/foo"` → tag is `@~/My Home/foo`
+
+Tags are handled by plugins that implement `get_prefixes()` and `expand(...)`, potentially adding context to the conversation.
+
+## Autocomplete and Highlighting (shared)
+
+- The editor provides the same autocomplete popup and inline “pill” highlighting for both `/` shortcuts and `@` tags.
+- Typing starts with `/` lists configured shortcuts; typing `@` lists tag prefixes and dynamic suggestions from plugins.
+- Enter inserts the selected suggestion as a pill; Tab inserts the raw text and keeps it editable (quoted forms `@"..."` and `/"..."` are supported).
+- Pills for shortcuts show plain text (no icon). Tag pills may show an icon as provided by the plugin’s `display_string`.
+- The UI applies a short minimum-length filter so suggestions appear after a few characters.
+
+## Plugins and Tags
+
+Tags live in the `macllm/tags/` directory and inherit from the base class `TagPlugin` (`macllm.tags.base.TagPlugin`).
+
+- Each plugin should implement:
   - `get_prefixes() -> list[str]` — return all `@` prefixes the plugin should react to
-  - `expand(trigger : str) -> (expanded_txt : str, context : str)` - return a tuple containing the expanded text and the additional context that needs to be added to the Conversation
-- Optionally, they may also implement an autocomplete method that is called for any input
-- Image plugins additionally add an image context to the conversation
+  - `expand(tag: str, conversation, request) -> str` — return the replacement string to insert into the prompt
+- Plugins may optionally implement dynamic autocomplete and display mapping.
+- Some plugins can also expose configuration tags for use in TOML via `get_config_prefixes()` and `on_config_tag(...)`.
 
-## Current Plugins
+## Current Plugins (examples)
 
-Right now, the following shortcut plugins exist:
+- ClipboardTag (`@clipboard`) — Inserts clipboard text as context.
+- FileTag (path-like tags: `@/`, `@~`, `@"/`, `@"~`) — Reads file contents (up to 10 KB) as context; config tag `@IndexFiles` builds an index.
+- URLTag (`@http://`, `@https://`) — Downloads and strips web page content as context.
+- ImageTag (`@selection`, `@window`) — Captures screenshots for image analysis.
+- SpeedTag (e.g. `@fast`, `@normal`, `@slow`) — Adjusts processing speed/sticky mode.
 
-- **ClipboardPlugin** (`@clipboard`) — Inserts clipboard text as context
-- **PathPlugin** (`@/`, `@~`, `@"/`, `@"~`) — Reads file contents (up to 10KB) as context
-- **URLPlugin** (`@http://`, `@https://`) — Downloads and strips web page content as context
-- **ImagePlugin** (`@selection`, `@window`) — Captures screenshots for image analysis 
+## Processing Order Summary
+
+1. Expand all `/...` shortcuts using the configured TOML mappings.
+2. Process all `@...` tags using the loaded tag plugins, which may add context and replace tags in-place. 
