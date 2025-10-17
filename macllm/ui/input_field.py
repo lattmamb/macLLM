@@ -12,116 +12,19 @@ from Cocoa import (
     NSFont,
     NSApp,
     NSRange,
-    NSColor,
-    NSBezierPath,
-    NSFontAttributeName,
-    NSForegroundColorAttributeName,
-    NSAttributedString,
-    NSMakeRect,
-    NSImage,
-    NSMutableAttributedString,
-    NSAttachmentAttributeName,
 )
 from macllm.ui.autocomplete import AutocompleteController
+from macllm.ui.tag_render import (
+    TAG_ATTR_NAME,
+    build_tag_attributed,
+    find_token_range,
+    display_string_for_tag,
+    build_input_attributed_with_caret,
+)
 from macllm.core.shortcuts import ShortCut
 import objc
 
-# ---------------------------------------------------------------------------
-# Custom NSTextAttachment subclass that applies a vertical offset so the
-# bottom of the attachment aligns with the text baseline without altering the
-# line height.  We override *attachmentBoundsForTextContainer:* to adjust the
-# returned rect by the desired offset (negative values move it downward).
-# ---------------------------------------------------------------------------
-
-
-class _InlineTextAttachment(objc.lookUpClass("NSTextAttachment")):
-    """NSTextAttachment that stores a vertical offset (in points)."""
-
-    _verticalOffset = 0.0  # default – no shift
-
-    # Setters / getters -----------------------------------------------------
-    def setVerticalOffset_(self, value):  # noqa: N802 – Objective-C naming
-        self._verticalOffset = value
-
-    def verticalOffset(self):  # noqa: D401
-        """Return stored vertical offset (for completeness)."""
-        return self._verticalOffset
-
-    # Cocoa callback --------------------------------------------------------
-    def attachmentBoundsForTextContainer_proposedLineFragment_glyphPosition_characterIndex_(
-        self, textContainer, lineFrag, position, charIndex
-    ):  # noqa: N802
-        rect = objc.super(_InlineTextAttachment, self).attachmentBoundsForTextContainer_proposedLineFragment_glyphPosition_characterIndex_(
-            textContainer, lineFrag, position, charIndex
-        )
-        rect.origin.y = self._verticalOffset
-        return rect
-
-# ---------------------------------------------------------------------------
-# Custom attachment cell that draws a rounded-rect “pill” with the tag text
-# ---------------------------------------------------------------------------
-
-
-def _make_tag_attachment(tag: str) -> NSAttributedString:
-    font = NSFont.systemFontOfSize_(13.0)
-
-    attrs = {NSFontAttributeName: font, NSForegroundColorAttributeName: NSColor.blackColor()}
-    text_ns = objc.lookUpClass("NSString").stringWithString_(tag)
-    txt_size = text_ns.sizeWithAttributes_(attrs)
-
-    # Horizontal / vertical padding around the text so that the pill isn't
-    # clipped and looks visually centred on the baseline.
-    padding_x = 6  # left / right padding
-    padding_y = 1  # top / bottom padding
-
-    width = txt_size.width + 2 * padding_x
-    height = txt_size.height
-
-    img = NSImage.alloc().initWithSize_((width, height))
-    img.lockFocus()
-
-    # Background pill - very light blue
-    NSColor.colorWithCalibratedRed_green_blue_alpha_(0.8, 0.9, 1.0, 1.0).set()
-    path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-        NSMakeRect(0, 0, width, height), 4.0, 4.0
-    )
-    path.fill()
-
-    # Draw text in the middle of the pill
-    text_rect = NSMakeRect(
-        padding_x,
-        (height - txt_size.height) / 2,
-        txt_size.width,
-        txt_size.height,
-    )
-    text_ns.drawInRect_withAttributes_(text_rect, attrs)
-
-    img.unlockFocus()
-
-    # Use our custom attachment class so we can apply a vertical offset that
-    # keeps the pill’s bottom flush with the baseline while preserving normal
-    # line height.
-    attachment = _InlineTextAttachment.alloc().init()
-    attachment.setImage_(img)
-
-    # Build mutable attributed string around the attachment
-    attr_string = NSMutableAttributedString.alloc().initWithAttributedString_(
-        NSAttributedString.attributedStringWithAttachment_(attachment)
-    )
-
-    # Lower the pill by the font's descender (negative) *and* the extra bottom
-    # padding we added.  This ensures the bottom edge sits exactly on the
-    # baseline.
-    vertical_offset = font.descender() - padding_y
-    attachment.setVerticalOffset_(vertical_offset)
-
-    # Create attributed string and adjust baseline so the pill doesn't push the
-    # line height up.  We lower the attachment by half of the extra height to
-    # centre it vertically relative to the text baseline.
-    # No need for NSBaselineOffset adjustments now – the attachment’s own
-    # bounds provide the correct alignment without increasing line height.
-
-    return attr_string
+TAG_ATTR_NAME_CONST = TAG_ATTR_NAME
 
 
 class InputFieldDelegate(NSObject):
@@ -137,6 +40,7 @@ class InputFieldDelegate(NSObject):
         self.text_view = text_view
         self.text_view.setDelegate_(self)
         self.autocomplete = None  # type: AutocompleteController | None
+        self._rebuilding = False  # suppress re-entrant textDidChange during rebuilds
         return self
 
     # ------------------------------------------------------------------
@@ -145,9 +49,16 @@ class InputFieldDelegate(NSObject):
     def textDidChange_(self, _notification): 
         """Refresh autocomplete list whenever the text changes."""
         try:
+            if getattr(self, "_rebuilding", False):
+                return
+            # IME guard: skip while composing marked text
+            if hasattr(self.text_view, 'hasMarkedText') and self.text_view.hasMarkedText():
+                return
             fragment = self._current_fragment()
             if self.autocomplete:
                 self.autocomplete.update_suggestions(fragment)
+            # Full-buffer re-render with pill conversion
+            self._rebuild_buffer_with_pills()
         except Exception as exc:  # pragma: no cover
             self.macllm_ui.macllm.debug_exception(exc)
 
@@ -161,6 +72,12 @@ class InputFieldDelegate(NSObject):
                     selection = self.autocomplete.current_selection()
                     if selection:
                         self._insert_tag(selection)
+                        # Add a trailing space so caret lands after a delimiter
+                        # and the pill is considered complete immediately.
+                        try:
+                            self.text_view.insertText_(" ")
+                        except Exception:
+                            pass
                         self.autocomplete.hide()
                     return True
                 elif commandSelector == 'insertTab:':
@@ -308,29 +225,11 @@ class InputFieldDelegate(NSObject):
         else:
             raw_tag = display_text = tag
 
-        # Build pill image using the *display* text
-        attr = _make_tag_attachment(display_text)
-
-        # Get typing attributes, but clean them first. If we just inserted a
-        # tag, the typing attributes will contain the previous tag's raw
-        # value, which we don't want to carry over.
-        TAG_ATTR_NAME = "macLLMTagString"
+        # Build attributed pill using shared renderer with cleaned typing attrs
         typing_attrs = self.text_view.typingAttributes().mutableCopy()
-        if typing_attrs.objectForKey_(TAG_ATTR_NAME):
-            typing_attrs.removeObjectForKey_(TAG_ATTR_NAME)
-
-        # Now, create the full attributed string for the tag.
-        # Start with a mutable copy of the visual attachment.
-        mutable_attr = attr.mutableCopy()
-
-        # Add the cleaned typing attributes.
-        mutable_attr.addAttributes_range_(typing_attrs, NSRange(0, 1))
-
-        # Finally, set the raw tag value, ensuring it overwrites anything
-        # that might have slipped through.
-        mutable_attr.addAttribute_value_range_(TAG_ATTR_NAME, raw_tag, NSRange(0, 1))
-
-        attr = mutable_attr
+        if typing_attrs.objectForKey_(TAG_ATTR_NAME_CONST):
+            typing_attrs.removeObjectForKey_(TAG_ATTR_NAME_CONST)
+        attr = build_tag_attributed(raw_tag, display_text, typing_attrs)
 
         # Replace the current word fragment with the attachment
         rng = self.text_view.selectedRange()  # current caret range
@@ -348,7 +247,7 @@ class InputFieldDelegate(NSObject):
     # ------------------------------------------------------------------
     # Plain-text extraction helpers
     # ------------------------------------------------------------------
-    def _plain_text_from_view(self) -> str:
+    def _plain_text_from_view(self, strip_ends: bool = True) -> str:
         """Return the text view contents as a plain string, converting tag
         attachments back to their underlying tag text.  Spaces are inserted
         before/after a tag when needed so that words are delimited properly.
@@ -365,9 +264,7 @@ class InputFieldDelegate(NSObject):
             if ch == "\ufffc":  # Attachment placeholder
                 # Retrieve the attachment at this character position
                 attrs, _ = text_storage.attributesAtIndex_effectiveRange_(idx, None)
-                TAG_ATTR_NAME = "macLLMTagString"
-
-                tag_text = attrs.get(TAG_ATTR_NAME)
+                tag_text = attrs.get(TAG_ATTR_NAME_CONST)
 
                 if tag_text is None:
                     # Unknown attachment – treat as empty string
@@ -387,7 +284,48 @@ class InputFieldDelegate(NSObject):
             else:
                 result.append(ch)
 
-        return "".join(result).strip()
+        joined = "".join(result)
+        return joined.strip() if strip_ends else joined
+
+    # ------------------------------------------------------------------
+    # Full-buffer rebuild helpers
+    # ------------------------------------------------------------------
+    def _rebuild_buffer_with_pills(self) -> None:
+        """Rebuild full buffer from plain text with pills and keep caret."""
+        tv = self.text_view
+        # Get plain text by expanding attachments
+        plain = self._plain_text_from_view(strip_ends=False)
+        # Compute caret plain index by scanning up to current selection
+        rng = tv.selectedRange()
+        raw_storage = tv.textStorage()
+        raw_str = raw_storage.string()
+        caret_plain = 0
+        for idx, ch in enumerate(raw_str[: rng.location]):
+            if ch == "\ufffc":
+                attrs, _ = raw_storage.attributesAtIndex_effectiveRange_(idx, None)
+                tag_text = attrs.get(TAG_ATTR_NAME_CONST)
+                caret_plain += len(tag_text) if tag_text else 0
+            else:
+                caret_plain += 1
+
+        typing_attrs = tv.typingAttributes()
+        plugins = getattr(self.macllm_ui.macllm, 'plugins', [])
+        shortcuts_list = [s.trigger for s in ShortCut.shortcuts]
+
+        attr_str, caret_attr = build_input_attributed_with_caret(
+            plain, typing_attrs, shortcuts_list, plugins, caret_plain
+        )
+
+        # Apply replacement in one batch
+        ts = tv.textStorage()
+        self._rebuilding = True
+        ts.beginEditing()
+        try:
+            ts.setAttributedString_(attr_str)
+        finally:
+            ts.endEditing()
+            self._rebuilding = False
+        tv.setSelectedRange_(NSRange(caret_attr, 0))
 
 
 class InputFieldHandler:

@@ -3,16 +3,15 @@
 macLLM is a utility that makes it easy to work with LLMs from the macOS desktop. It is launched
 via a hotkey and can do things like:
 * Send a prompt to an LLM, e.g. "What state is Kansas City in?"
-* Translate or summarize text, e.g. "Translate the @clipboard to Spanish"
-* Look at desktop windows, e.g. "Write a short biography based on this LinkedIn @window"
-* Find good emojis for a specific topic, e.g. "/emojis: diving in hawaii"
-* Work with URLs, e.g. "summarize @https://github.com/appenz/macLLM/edit/main/README.md"
+* Fix spelling or find emojis for a specific topic
 * Work with files, e.g. "find the ship date in @~/Documents/Notes/team-meeting.md"
+* Index and auto-complete files in folders so you can auto-complete them
+* Work with URLs, e.g. "summarize @https://github.com/appenz/macLLM/edit/main/README.md"
 
-macLLM is open source (Apache 2.0) and designed to be easily extensible with your own workflows.
-Here is a short demo video (with sound) of some of the capabilities.
-
-https://github.com/user-attachments/assets/391b85da-689e-4b49-b449-dd3593ea512c
+macLLM is:
+* Open source (Apache 2.0)
+* Written in 100% Python to be easily extensible
+* Has a native macOS Cocoa UI (written in Python)
 
 ## Installation
 
