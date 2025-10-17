@@ -138,7 +138,7 @@ class MacLLMUI:
     window_width = text_area_width + padding*2
 
     # Top bar positioning and sizing
-    top_bar_text_field_width = 80  # Width of the text field in top bar
+    top_bar_text_field_width = 180  # Width of the text field in top bar
     icon_x = padding + fudge
     text_area_x = padding + fudge
     input_field_x = padding + fudge

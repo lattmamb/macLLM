@@ -80,9 +80,9 @@ class Conversation:
             if ctx['type'] != 'image':
                 context_name = ctx['name']
                 text_parts.append(
-                    f"--- contents:{context_name} ---\n"
+                    f"--- context:{context_name} ---\n"
                     f"{ctx['context']}\n"
-                    f"--- end contents:{context_name} ---\n"
+                    f"--- end context:{context_name} ---\n"
                 )
         return "\n".join(text_parts)
     

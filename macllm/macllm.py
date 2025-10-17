@@ -34,15 +34,15 @@ alias_token = "@"
 
 system_prompt = """
 You are a helpful assistant.
-- If the user refers to a RESOURCE:... this is a reference to a resource block.
-- In most cases, you dont need to mention the resource.
-- If you refer to it, do it by name only. So for "RESOURCE:clipboard" just say "the clipboard"
-- If asked to just look at a resource, just acknowledge it. A question will follow later.
+- If the request refers to a context:... this is a reference to a context block.
+- In most cases, you dont need to mention the context explicitly.
+- If you refer to it, do it by name only. So for "context:clipboard" just say "the clipboard"
+- If asked to just look at a context, just acknowledge it. A question will follow later.
 - If the user's request is not clear, ask for clarification.
 Conversation history follows below.
 """
 
-context_start = "\n\n--- RESOURCE BLOCKS START HERE ---\n"
+context_start = "\n\n\n--- context blocks follow below this line ---\n\n\n"
 
 # Class defining ANSI color codes for terminal output
 class color:
@@ -111,9 +111,10 @@ class MacLLM:
         self.conversation_history = ConversationHistory()
         self.chat_history = self.conversation_history.get_current_conversation() or self.conversation_history.add_conversation()
         
-        # Initialize lightweight placeholder for UI (Normal). Real connector is built per request.
-        self.llm = ModelConnector(model=FAST_CONFIG.model)
-        self.llm.provider = FAST_CONFIG.provider
+        # Initialize lightweight placeholder for UI using default speed (Normal).
+        # This ensures the top bar shows the correct model before the first request.
+        self.llm = ModelConnector(model=NORMAL_CONFIG.model)
+        self.llm.provider = NORMAL_CONFIG.provider
         self._prefix_index = []
 
     def handle_instructions(self, user_input):

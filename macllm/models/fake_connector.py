@@ -29,9 +29,9 @@ class FakeConnector(ModelConnector):
         The prompt built by :pymeth:`macllm.macllm.MacLLM.handle_instructions`
         contains blocks formatted like::
 
-            --- contents:NAME ---
+            --- context:NAME ---
             ...
-            --- end contents:NAME ---
+            --- end context:NAME ---
 
         This helper extracts all such blocks so that tests can make direct
         assertions on them without re-implementing the parsing logic.
@@ -43,7 +43,7 @@ class FakeConnector(ModelConnector):
         import re
 
         pattern = re.compile(
-            r"--- contents:(?P<name>[^\s]+) ---\n(?P<content>.*?)\n--- end contents:\1 ---",
+            r"--- context:(?P<name>[^\s]+) ---\n(?P<content>.*?)\n--- end context:\1 ---",
             re.DOTALL,
         )
 
