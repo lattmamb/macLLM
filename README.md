@@ -5,7 +5,7 @@ via a hotkey and can do things like:
 * Send a prompt to an LLM, e.g. "What state is Kansas City in?"
 * Translate or summarize text, e.g. "Translate the @clipboard to Spanish"
 * Look at desktop windows, e.g. "Write a short biography based on this LinkedIn @window"
-* Find good emojis for a specific topic, e.g. "@emojis: diving in hawaii"
+* Find good emojis for a specific topic, e.g. "/emojis: diving in hawaii"
 * Work with URLs, e.g. "summarize @https://github.com/appenz/macLLM/edit/main/README.md"
 * Work with files, e.g. "find the ship date in @~/Documents/Notes/team-meeting.md"
 
@@ -16,29 +16,33 @@ https://github.com/user-attachments/assets/391b85da-689e-4b49-b449-dd3593ea512c
 
 ## Installation
 
-macLLM uses the uv package manager, make sure you have it installed first (https://github.com/astral-sh/uv). 
+macLLM uses the uv package manager, make sure you have it installed first (`https://github.com/astral-sh/uv`). 
 
 Your OpenAI API key should be configured in the environment variable OPENAI_API_KEY.
 
-> OPENAI_API_KEY="your_api_key"
+```bash
+export OPENAI_API_KEY="your_api_key"
+```
 
-Now you can run macllm it with:
+Now you can run macLLM with:
 
-> uv run macllm/macllm.py
+```bash
+uv run -m macllm
+```
 
 uv should take care of all the dependencies.
 
 ## Basic Usage
 
 Press the hotkey. By default, it is option-space (⌥-space) but it can be easily remapped. 
-A small window will appear in the center of the screen and you can start typing a query to the LLM.
+A window will appear in the center of the screen and you can start typing a query to the LLM.
 For example:
 
 > Capital of france?
 
-After a second or so you should ge the answer "Paris". You can now do a few things:
+After a second or so you should get the answer "Paris". You can now do a few things:
 1. Hit escape to close the window. Pressing the hotkey again will close it as well.
-2. You can copy the text to the clipboard by pressing Command-C (⌘-C). This will also close the macLLM window.
+2. Press ⬆️ to move to the reply and press Command-C (⌘-C) to copy the reply.
 3. Type a new query into the text box.
 
 ## Referencing external data
@@ -52,22 +56,37 @@ macLLM understands a number of external data sources:
 
 The data can be referenced in the query, e.g. "translate @clipboard into French" or "summarize the slide @window".
 
+## Conversations and context
+
+- A conversation is the running exchange between you and the assistant. macLLM keeps the full chat history in the main text area.
+- When you reference external data (e.g., `@clipboard`, a path like `@~/note.md`, a URL, or an image via `@selection`/`@window`), macLLM adds that as a persistent context item for the current conversation.
+- Context is automatically included with every subsequent request in the same conversation and is summarized in the top bar as small pills.
+- Starting a new conversation clears prior context. You can also reset history from the UI (e.g., via the menu shortcut) if you want a clean slate.
+- You can start a new conversation with Command-N (⌘-N)
+
+## Browsing previous messages and copying
+
+- Press Up Arrow when the caret is on the first line of the input to enter history browsing.
+- Use Up/Down to move through previous user/assistant messages.
+- Press Command-C (⌘-C) to copy the currently highlighted message.
+- Press Return (↩) to insert the message back into the input field for quick editing/resubmission; press Escape (Esc) to exit browsing.
+
 ## Shortcuts
 
-Shortcuts are shorthand for specifc prompts. They always start with the @ symbol. So for example "@fix" is a prompt that corrects spelling or "#tr-es" is short for translate to Spanish. 
+Shortcuts are shorthand for specific prompts and always start with the `/` symbol. For example, "/fix" is a prompt with instructions to fix spelling and grammar but but nothing else.
 
->@fix My Canaidian Mooose is Braun.
+>/fix My Canaidian Mooose is Braun.
 
 This gets internally expanded to:
 
->#Correct any spelling or grammar mistakes in the following text: My Canaidian Mooose is Braun.
+>Fix any spelling or grammar mistakes. Make no other changes. Reply *only* with the corrected text. The input is: My Canaidian Mooose is Braun.
 
 Which GPT will correct to:
 
 > My Canadian Moose is Brown.
 
-You can add your own shortcuts in two ways:
-1. In the shortcuts.py file for built-in shortcuts
+Shortcuts are read from:
+1. The shortcuts.py file for built-in shortcuts
 2. In TOML config files in either:
    - App config directory: ./config/
    - User config directory: ~/.config/macllm/
@@ -75,24 +94,46 @@ You can add your own shortcuts in two ways:
 Config files should use TOML format with a shortcuts table. Example:
 ```toml
 shortcuts = [
-  ["@exampleshortcut", "This is the expanded version of the exampleshortcut."],
-  ["@hosts", "@/etc/hosts"],
+  ["/exampleshortcut", "This is the expanded version of the example shortcut."],
+  ["/emoji", "Suggest a single emoji that represents the following (reply only with the emoji, do not write any other text) : "],
 ]
 ```
 
+Entries whose trigger starts with `@` are reserved for plugin configuration tags (not user shortcuts).
+
+## Autocomplete and highlighting
+
+Both `/` shortcuts and `@` tags use the same autocomplete popup and inline pill highlighting:
+- Typing `/` shows your configured shortcuts; typing `@` shows available tag prefixes and dynamic suggestions from plugins.
+- Enter inserts the selected suggestion as a pill; Tab inserts the raw text and keeps it editable. Quoted forms like `@"..."` and `/"..."` are supported.
+
 ## Example Shortcuts
-- `#exp`: Expand the text using sophisticated and concise language.
-- `#fix`: Correct spelling and grammar mistakes in the following text.
-- `#fix-de`: Correct spelling and grammar mistakes in the following German text.
-- `#rewrite`: Rewrite the text to be extremely concise while keeping the same meaning.
-- `#tr-de`: Translate the text from English to German.
-- `#emoji`: Pick a relevant emoji for the text and reply with only that emoji.
-- `#emoji`: Pick a few relevant emojis for the text and reply with only those emojis.
+- Default examples in `config/default_shortcuts.toml`:
+  - `/emoji`: Pick a relevant emoji for the text and reply only with that emoji.
+  - `/emojis`: Suggest a few relevant emojis and reply only with those emojis.
+- You can add more in your own TOML files under `~/.config/macllm/` (see sample above).
 
 ## Using it via the clipboard
 
-If the clipboard contains a text that starts with the trigger (default is "@@"), it will be sent to the LLM.
-This can be useful if you want to use macLLM from withint an editor. Just type "@@" followed by instructions (e.g. "@@shorten this paragraph:"), hit copy (i.e. Apple-C), wait 1-2 seconds, and paste (Apple-P). 
+If the clipboard contains text that starts with the trigger (default is "@@"), it will be sent to the LLM.
+This can be useful if you want to use macLLM from within an editor. Just type "@@" followed by instructions (e.g. "@@shorten this paragraph:"), hit copy (⌘-C), wait a few seconds, and paste (⌘-V).
+
+## Indexing markdown notes and file autocomplete
+
+You can index directories of notes (e.g. Obsidian) so that files are easy to find and insert via autocomplete:
+
+- Add `@IndexFiles` entries in any shortcuts TOML file (app or user config). On startup, macLLM will recursively index `.txt` and `.md` files in those directories.
+- When you type `@` and at least 3 characters, the autocomplete will list up to 10 matching files by basename (case-insensitive substring match). Selecting a suggestion inserts a pill that shows the filename; when sent, the full path is expanded and the file’s content (up to ~10 KB) is added as context.
+- Path-like tags also support direct completion for partial paths (e.g., `@~/Documents/`), including quoted paths with spaces: `@"~/My Notes/file.md"`.
+
+Example config:
+
+```toml
+shortcuts = [
+  ["@IndexFiles", "/Users/you/Notes"],
+  ["@IndexFiles", "/Users/you/Work/Docs"],
+]
+```
 
 ## License
 

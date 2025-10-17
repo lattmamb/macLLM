@@ -1,4 +1,5 @@
 shortcuts = [
   ["/emojis", "Suggest 5 emojis that are relevant to the following (reply only with the emojis, do not write any other text): "],
   ["/emoji", "Suggest a single emoji that represents the following (reply only with the emojis, do not write any other text) : "],
+  ["/fix", "Fix any spelling or grammar mistakes. Make no other changes. Reply *only* with the corrected text. The text is: "],
 ]
