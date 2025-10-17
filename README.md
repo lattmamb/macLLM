@@ -5,13 +5,15 @@ via a hotkey and can do things like:
 * Send a prompt to an LLM, e.g. "What state is Kansas City in?"
 * Fix spelling or find emojis for a specific topic
 * Work with files, e.g. "find the ship date in @~/Documents/Notes/team-meeting.md"
-* Index and auto-complete files in folders so you can auto-complete them
+* Index your notes (e.g. Obsidian) and auto-complete them for easy reference
 * Work with URLs, e.g. "summarize @https://github.com/appenz/macLLM/edit/main/README.md"
 
 macLLM is:
 * Open source (Apache 2.0)
 * Written in 100% Python to be easily extensible
 * Has a native macOS Cocoa UI (written in Python)
+
+![Example Image](./assets/example.png)
 
 ## Installation
 
